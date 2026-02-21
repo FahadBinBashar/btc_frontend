@@ -18,7 +18,7 @@ const App = () => (
     <TooltipProvider>
       <Toaster />
       <Sonner />
-      <BrowserRouter>
+      <BrowserRouter basename="/btc_portal">
         <AuthProvider>
           <Routes>
             <Route path="/" element={<Index />} />
