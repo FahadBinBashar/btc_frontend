@@ -36,6 +36,38 @@ interface KYCVerificationProps {
 type VerificationStep = "intro" | "verifying" | "polling" | "complete";
 type WebhookStatus = "pending" | "verified" | "rejected" | "manual_review" | "timeout";
 
+const normalizeKycStatus = (value: unknown): string => {
+  if (typeof value !== "string") return "";
+  return value.trim().toLowerCase();
+};
+
+const extractKycStatus = (statusPayload: any): string => {
+  // Prefer KYC-specific keys before generic request-level status.
+  const candidates = [
+    statusPayload?.kyc_status,
+    statusPayload?.kycStatus,
+    statusPayload?.verification_status,
+    statusPayload?.verificationStatus,
+    statusPayload?.identity_status,
+    statusPayload?.identityStatus,
+    statusPayload?.data?.kyc_status,
+    statusPayload?.data?.kycStatus,
+    statusPayload?.data?.verification_status,
+    statusPayload?.data?.verificationStatus,
+    statusPayload?.data?.identity_status,
+    statusPayload?.data?.identityStatus,
+    statusPayload?.status,
+    statusPayload?.data?.status,
+  ];
+
+  for (const candidate of candidates) {
+    const normalized = normalizeKycStatus(candidate);
+    if (normalized) return normalized;
+  }
+
+  return "";
+};
+
 const KYCVerification = ({ selectedNumber, registrationData, requestId, onComplete, onBack }: KYCVerificationProps) => {
   const navigate = useNavigate();
   const [step, setStep] = useState<VerificationStep>("intro");
@@ -69,9 +101,15 @@ const KYCVerification = ({ selectedNumber, registrationData, requestId, onComple
   // Process status update from realtime or manual fetch
   const processStatusUpdate = useCallback((statusPayload: any) => {
     if (!statusPayload) return false;
-    const status = statusPayload?.status || statusPayload?.kyc_status || statusPayload?.data?.status;
+    const status = extractKycStatus(statusPayload);
 
-    if (status === "verified" || status === "approved") {
+    if (
+      status === "verified" ||
+      status === "approved" ||
+      status === "kyc_verified" ||
+      status === "completed" ||
+      status === "success"
+    ) {
       setWebhookStatus("verified");
       setVerificationData(statusPayload);
       setStep("complete");
@@ -79,7 +117,13 @@ const KYCVerification = ({ selectedNumber, registrationData, requestId, onComple
       return true;
     }
 
-    if (status === "rejected" || status === "failed") {
+    if (
+      status === "rejected" ||
+      status === "failed" ||
+      status === "kyc_rejected" ||
+      status === "declined" ||
+      status === "expired"
+    ) {
       setWebhookStatus("rejected");
       setVerificationData(statusPayload);
       setStep("complete");
@@ -87,7 +131,13 @@ const KYCVerification = ({ selectedNumber, registrationData, requestId, onComple
       return true;
     }
 
-    if (statusPayload?.metadata && (statusPayload?.metadata as any)?.reviewNeeded) {
+    if (
+      status === "manual_review" ||
+      status === "review_required" ||
+      status === "requires_review" ||
+      status === "pending_review" ||
+      (statusPayload?.metadata && (statusPayload?.metadata as any)?.reviewNeeded)
+    ) {
       setWebhookStatus("manual_review");
       setStep("complete");
       toast.warning("Your verification requires manual review");

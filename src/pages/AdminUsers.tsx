@@ -48,7 +48,7 @@ import { api } from "@/lib/api";
 import { toast } from "sonner";
 import { format } from "date-fns";
 
-const SUPER_ADMIN_EMAIL = 'shawn@guidepoint.co.bw';
+const SUPER_ADMIN_EMAIL = "shawn@guidepoint.co.bw";
 
 interface UserProfile {
   id: string;
@@ -59,6 +59,21 @@ interface UserProfile {
   roles: string[];
   isSuperAdmin: boolean;
 }
+
+const toRolesArray = (value: unknown): string[] => {
+  if (Array.isArray(value)) {
+    return value.filter((role): role is string => typeof role === "string" && role.trim().length > 0);
+  }
+
+  if (typeof value === "string") {
+    return value
+      .split(",")
+      .map((role) => role.trim())
+      .filter(Boolean);
+  }
+
+  return [];
+};
 
 const AdminUsers = () => {
   const navigate = useNavigate();
@@ -88,7 +103,17 @@ const AdminUsers = () => {
   const [confirmNewPassword, setConfirmNewPassword] = useState("");
   const [isChangingPassword, setIsChangingPassword] = useState(false);
 
-  const isSuperAdmin = user?.email === SUPER_ADMIN_EMAIL;
+  const currentUserEmail = user?.email?.toLowerCase() ?? "";
+  const currentUserProfile = users.find(
+    (profile) => (profile.email ?? "").toLowerCase() === currentUserEmail
+  );
+  const isSuperAdmin =
+    (user?.email ?? "").toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase() ||
+    Boolean(currentUserProfile?.isSuperAdmin) ||
+    currentUserProfile?.roles.some((role) => {
+      const normalized = role.toLowerCase();
+      return normalized === "super_admin" || normalized === "super-admin";
+    }) === true;
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -110,7 +135,35 @@ const AdminUsers = () => {
       const data = await api.adminUsers();
       const rawList = data?.users || data?.data || data || [];
       const usersList = Array.isArray(rawList) ? rawList : [];
-      setUsers(usersList);
+
+      const normalizedUsers: UserProfile[] = usersList.map((rawUser: Record<string, unknown>, index: number) => {
+        const email = typeof rawUser?.email === "string" ? rawUser.email : null;
+        const fullName =
+          typeof rawUser?.full_name === "string"
+            ? rawUser.full_name
+            : typeof rawUser?.name === "string"
+              ? rawUser.name
+              : null;
+        const createdAt =
+          typeof rawUser?.created_at === "string" ? rawUser.created_at : new Date().toISOString();
+        const roles = toRolesArray(rawUser?.roles ?? rawUser?.role);
+        const isSuperAdmin =
+          Boolean(rawUser?.isSuperAdmin) ||
+          Boolean(rawUser?.is_super_admin) ||
+          (typeof email === "string" && email.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase());
+
+        return {
+          id: String(rawUser?.id ?? rawUser?.user_id ?? `user-${index}`),
+          user_id: String(rawUser?.user_id ?? rawUser?.id ?? `user-${index}`),
+          email,
+          full_name: fullName,
+          created_at: createdAt,
+          roles,
+          isSuperAdmin,
+        };
+      });
+
+      setUsers(normalizedUsers);
     } catch (err) {
       console.error("Error fetching users:", err);
       toast.error("Failed to fetch users");
@@ -129,10 +182,38 @@ const AdminUsers = () => {
     if (!confirmDialog) return;
 
     try {
-      toast.error("Role updates are not supported by the current API.");
+      const { userId, action, role } = confirmDialog;
+
+      if (action === "assign") {
+        try {
+          await api.adminAssignRole({ userId, role });
+        } catch {
+          // Fallback endpoint used by some Laravel variants
+          if (role === "admin") {
+            await api.adminMakeAdmin(userId);
+          } else {
+            throw new Error("Role assignment failed");
+          }
+        }
+        toast.success("Role assigned successfully");
+      } else {
+        try {
+          await api.adminRemoveRole({ userId, role });
+        } catch {
+          // Fallback endpoint used by some Laravel variants
+          if (role === "admin") {
+            await api.adminRemoveAdmin(userId);
+          } else {
+            throw new Error("Role removal failed");
+          }
+        }
+        toast.success("Role removed successfully");
+      }
+
+      fetchUsers();
     } catch (err) {
       console.error("Error updating role:", err);
-      toast.error("Failed to update role");
+      toast.error(err instanceof Error ? err.message : "Failed to update role");
     } finally {
       setConfirmDialog(null);
     }
@@ -151,11 +232,20 @@ const AdminUsers = () => {
 
     setIsCreating(true);
     try {
-      await api.adminCreateUser({
-        name: newAdminName || undefined,
-        email: newAdminEmail,
-        password: newAdminPassword,
-      });
+      try {
+        await api.adminCreateAdmin({
+          fullName: newAdminName || undefined,
+          email: newAdminEmail,
+          password: newAdminPassword,
+        });
+      } catch {
+        // Fallback to legacy create endpoint
+        await api.adminCreateUser({
+          name: newAdminName || undefined,
+          email: newAdminEmail,
+          password: newAdminPassword,
+        });
+      }
       toast.success("Admin user created successfully");
       setCreateAdminOpen(false);
       setNewAdminEmail("");
@@ -164,7 +254,7 @@ const AdminUsers = () => {
       fetchUsers();
     } catch (err) {
       console.error("Error creating admin:", err);
-      toast.error("Failed to create admin");
+      toast.error(err instanceof Error ? err.message : "Failed to create admin");
     } finally {
       setIsCreating(false);
     }

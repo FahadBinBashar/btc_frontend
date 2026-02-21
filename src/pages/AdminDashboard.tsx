@@ -83,6 +83,9 @@ interface KYCRecord {
   id: string;
   msisdn: string | null;
   metadata?: any;
+  document_photos?: Array<{ path?: string; url?: string; type?: string; label?: string }>;
+  selfie_url?: string | null;
+  document_photo_urls?: string[] | null;
   country: string | null;
   country_abbreviation: string | null;
   full_name: string | null;
@@ -136,6 +139,22 @@ interface Stats {
   todayCount: number;
 }
 
+const normalizeStats = (rawStats: any): Stats => ({
+  total: Number(rawStats?.total ?? rawStats?.total_requests ?? 0),
+  pending: Number(rawStats?.pending ?? rawStats?.pending_kyc ?? 0),
+  verified: Number(rawStats?.verified ?? rawStats?.completed_requests ?? 0),
+  rejected: Number(rawStats?.rejected ?? 0),
+  expired: Number(rawStats?.expired ?? 0),
+  omang: Number(rawStats?.omang ?? 0),
+  passport: Number(rawStats?.passport ?? 0),
+  esimPurchase: Number(rawStats?.esimPurchase ?? 0),
+  simSwap: Number(rawStats?.simSwap ?? 0),
+  newPhysicalSim: Number(rawStats?.newPhysicalSim ?? 0),
+  kycCompliance: Number(rawStats?.kycCompliance ?? 0),
+  smegaRegistration: Number(rawStats?.smegaRegistration ?? 0),
+  todayCount: Number(rawStats?.todayCount ?? 0),
+});
+
 const AdminDashboard = () => {
   const navigate = useNavigate();
   const { user, isAdmin, isLoading: authLoading, isAdminLoading, signOut } = useAuth();
@@ -186,9 +205,14 @@ const AdminDashboard = () => {
   const fetchStats = async () => {
     try {
       const data = await api.adminDashboard();
-      const nextStats = data?.stats || data?.dashboard?.stats || data?.data?.stats;
+      // Prefer detailed dashboard stats; fallback to legacy stats keys.
+      const nextStats =
+        data?.dashboard?.stats ||
+        data?.data?.dashboard?.stats ||
+        data?.data?.stats ||
+        data?.stats;
       if (nextStats) {
-        setStats(nextStats);
+        setStats(normalizeStats(nextStats));
       }
     } catch (err) {
       console.error("Error fetching stats:", err);
@@ -279,8 +303,68 @@ const AdminDashboard = () => {
     });
 
     try {
-      toast.error("Document retrieval is not available in the current API.");
-      setDocumentViewDialog(null);
+      const data = await api.adminDashboard();
+      const rawRecords =
+        data?.records ||
+        data?.kyc_records ||
+        data?.data?.records ||
+        data?.data?.kyc_records ||
+        [];
+      const allRecords: KYCRecord[] = Array.isArray(rawRecords) ? rawRecords : [];
+      const target = allRecords.find((record) => String(record.id) === String(recordId));
+
+      const selfieUrl =
+        (typeof target?.selfie_url === "string" && target.selfie_url) ||
+        (typeof target?.metadata?.selfie_url === "string" && target.metadata.selfie_url) ||
+        (typeof target?.metadata?.selfieUrl === "string" && target.metadata.selfieUrl) ||
+        "";
+      const documentPhotoUrls = [
+        ...(Array.isArray(target?.document_photo_urls) ? target.document_photo_urls : []),
+        ...(Array.isArray(target?.metadata?.document_photo_urls) ? target.metadata.document_photo_urls : []),
+        ...(Array.isArray(target?.metadata?.documentPhotoUrls) ? target.metadata.documentPhotoUrls : []),
+      ].filter((url): url is string => typeof url === "string" && url.length > 0);
+
+      const metadataDocs = Array.isArray(target?.metadata?.documents) ? target?.metadata?.documents : [];
+      const metadataPhotos = Array.isArray(target?.metadata?.documentPhotos) ? target?.metadata?.documentPhotos : [];
+      const dbPhotos = Array.isArray(target?.document_photos) ? target?.document_photos : [];
+      const allPhotoSources = [...dbPhotos, ...metadataDocs, ...metadataPhotos];
+
+      const structuredDocuments = allPhotoSources
+        .map((item: any, index: number) => {
+          const url = item?.url || item?.signedUrl || item?.publicUrl || item?.imageUrl || item?.path;
+          if (!url || typeof url !== "string") return null;
+          return {
+            type: item?.type || `document_${index + 1}`,
+            label: item?.label || `Document ${index + 1}`,
+            url,
+          };
+        })
+        .filter(Boolean) as Array<{ type: string; label: string; url: string }>;
+
+      const directDocuments = documentPhotoUrls.map((url, index) => ({
+        type: `document_photo_${index + 1}`,
+        label: `Document ${index + 1}`,
+        url,
+      }));
+
+      const selfieDocument = selfieUrl
+        ? [{ type: "selfie", label: "Selfie", url: selfieUrl }]
+        : [];
+
+      const mergedDocuments = [...selfieDocument, ...directDocuments, ...structuredDocuments];
+      const seenUrls = new Set<string>();
+      const documents = mergedDocuments.filter((doc) => {
+        if (!doc?.url || seenUrls.has(doc.url)) return false;
+        seenUrls.add(doc.url);
+        return true;
+      });
+
+      setDocumentViewDialog({
+        open: true,
+        recordId,
+        recordName,
+        documents,
+      });
     } catch (err) {
       console.error("Error fetching documents:", err);
       toast.error("Failed to fetch documents");

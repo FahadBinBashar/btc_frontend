@@ -75,6 +75,16 @@ export const api = {
   adminUsers: () => apiRequest("/api/admin/users", { auth: true }),
   adminCreateUser: (payload: { name?: string; email: string; password: string }) =>
     apiRequest("/api/admin/users", { method: "POST", body: payload, auth: true }),
+  adminCreateAdmin: (payload: { fullName?: string; email: string; password: string }) =>
+    apiRequest("/api/admin/users/create-admin", { method: "POST", body: payload, auth: true }),
+  adminAssignRole: (payload: { userId: string; role: string }) =>
+    apiRequest("/api/admin/users/assign-role", { method: "POST", body: payload, auth: true }),
+  adminRemoveRole: (payload: { userId: string; role: string }) =>
+    apiRequest("/api/admin/users/remove-role", { method: "POST", body: payload, auth: true }),
+  adminMakeAdmin: (userId: string) =>
+    apiRequest(`/api/admin/users/${userId}/make-admin`, { method: "PATCH", body: {}, auth: true }),
+  adminRemoveAdmin: (userId: string) =>
+    apiRequest(`/api/admin/users/${userId}/remove-admin`, { method: "PATCH", body: {}, auth: true }),
   adminPayments: (params?: Record<string, string>) => {
     const query = params ? `?${new URLSearchParams(params).toString()}` : "";
     return apiRequest(`/api/admin/payments${query}`, { auth: true });
