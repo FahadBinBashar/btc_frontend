@@ -79,8 +79,18 @@ const KYCVerification = ({ selectedNumber, registrationData, requestId, onComple
   const [isStarting, setIsStarting] = useState(false);
   const [isManuallyRefreshing, setIsManuallyRefreshing] = useState(false);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const isFetchingStatusRef = useRef(false);
+  const isTerminalStateRef = useRef(false);
   const requestIdRef = useRef<string | number>(requestId);
   const { startVerification, isLoading, isSDKLoaded, error: metaError, clearError, cleanupMetaMapUI } = useMetaMap();
+
+  const stopPolling = useCallback(() => {
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current);
+      pollingIntervalRef.current = null;
+    }
+  }, []);
 
   useEffect(() => {
     requestIdRef.current = requestId;
@@ -88,6 +98,11 @@ const KYCVerification = ({ selectedNumber, registrationData, requestId, onComple
 
   // Fetch record via edge function (for manual refresh or initial check)
   const fetchKycStatus = useCallback(async () => {
+    if (isFetchingStatusRef.current) {
+      return null;
+    }
+
+    isFetchingStatusRef.current = true;
     console.log("fetchKycStatus called with:", { requestId: requestIdRef.current });
     try {
       const data = await api.esimKycStatus(requestIdRef.current);
@@ -95,6 +110,8 @@ const KYCVerification = ({ selectedNumber, registrationData, requestId, onComple
     } catch (err) {
       console.error("Fetch error:", err);
       return null;
+    } finally {
+      isFetchingStatusRef.current = false;
     }
   }, []);
 
@@ -110,6 +127,8 @@ const KYCVerification = ({ selectedNumber, registrationData, requestId, onComple
       status === "completed" ||
       status === "success"
     ) {
+      isTerminalStateRef.current = true;
+      stopPolling();
       setWebhookStatus("verified");
       setVerificationData(statusPayload);
       setStep("complete");
@@ -124,6 +143,8 @@ const KYCVerification = ({ selectedNumber, registrationData, requestId, onComple
       status === "declined" ||
       status === "expired"
     ) {
+      isTerminalStateRef.current = true;
+      stopPolling();
       setWebhookStatus("rejected");
       setVerificationData(statusPayload);
       setStep("complete");
@@ -138,6 +159,8 @@ const KYCVerification = ({ selectedNumber, registrationData, requestId, onComple
       status === "pending_review" ||
       (statusPayload?.metadata && (statusPayload?.metadata as any)?.reviewNeeded)
     ) {
+      isTerminalStateRef.current = true;
+      stopPolling();
       setWebhookStatus("manual_review");
       setStep("complete");
       toast.warning("Your verification requires manual review");
@@ -145,7 +168,7 @@ const KYCVerification = ({ selectedNumber, registrationData, requestId, onComple
     }
 
     return false;
-  }, []);
+  }, [stopPolling]);
 
   // Handle timeout redirect
   useEffect(() => {
@@ -169,8 +192,9 @@ const KYCVerification = ({ selectedNumber, registrationData, requestId, onComple
       if (timeoutRef.current) {
         clearTimeout(timeoutRef.current);
       }
+      stopPolling();
     };
-  }, []);
+  }, [stopPolling]);
 
   // Polling effect
   useEffect(() => {
@@ -201,16 +225,28 @@ const KYCVerification = ({ selectedNumber, registrationData, requestId, onComple
   }, [step]);
 
   useEffect(() => {
-    if (step !== "polling") return;
+    if (step !== "polling" || isTerminalStateRef.current) return;
+
+    stopPolling();
     const interval = setInterval(async () => {
+      if (isTerminalStateRef.current) {
+        stopPolling();
+        return;
+      }
       const result = await fetchKycStatus();
       if (result) {
         processStatusUpdate(result);
       }
     }, 3000);
+    pollingIntervalRef.current = interval as unknown as NodeJS.Timeout;
 
-    return () => clearInterval(interval);
-  }, [step, fetchKycStatus, processStatusUpdate]);
+    return () => {
+      clearInterval(interval);
+      if (pollingIntervalRef.current === (interval as unknown as NodeJS.Timeout)) {
+        pollingIntervalRef.current = null;
+      }
+    };
+  }, [step, fetchKycStatus, processStatusUpdate, stopPolling]);
 
   const handleStartVerification = async () => {
     if (!documentType) {
@@ -220,6 +256,8 @@ const KYCVerification = ({ selectedNumber, registrationData, requestId, onComple
 
     setError(null);
     clearError();
+    isTerminalStateRef.current = false;
+    stopPolling();
     setStep("verifying");
     setIsStarting(true);
 
@@ -255,6 +293,8 @@ const KYCVerification = ({ selectedNumber, registrationData, requestId, onComple
       toast.info("Verification submitted. Waiting for results...");
     } catch (err) {
       console.error("KYC start failed:", err);
+      isTerminalStateRef.current = true;
+      stopPolling();
       setError("Failed to start verification");
       setWebhookStatus("rejected");
       setStep("complete");
@@ -299,6 +339,8 @@ const KYCVerification = ({ selectedNumber, registrationData, requestId, onComple
   };
 
   const handleRetry = () => {
+    isTerminalStateRef.current = false;
+    stopPolling();
     setStep("intro");
     setWebhookStatus("pending");
     setVerificationData(null);

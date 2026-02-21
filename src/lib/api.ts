@@ -6,7 +6,11 @@ type ApiRequestOptions = {
   responseType?: "json" | "text";
 };
 
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "https://darktechteam.com/btc_portal/backend/public";
+const RAW_API_BASE_URL =
+  (import.meta.env.VITE_API_BASE_URL as string | undefined) ??
+  "https://darktechteam.com/btc_portal/backend/public";
+const API_BASE_URL =
+  import.meta.env.DEV && /^https?:\/\//i.test(RAW_API_BASE_URL) ? "" : RAW_API_BASE_URL;
 const ADMIN_TOKEN_KEY = "btc_admin_token";
 const ADMIN_EMAIL_KEY = "btc_admin_email";
 
@@ -25,6 +29,7 @@ export const authStorage = {
 
 const buildUrl = (path: string) => {
   if (path.startsWith("http://") || path.startsWith("https://")) return path;
+  if (!API_BASE_URL) return path.startsWith("/") ? path : `/${path}`;
   const base = API_BASE_URL.replace(/\/+$/, "");
   const suffix = path.startsWith("/") ? path : `/${path}`;
   return `${base}${suffix}`;
