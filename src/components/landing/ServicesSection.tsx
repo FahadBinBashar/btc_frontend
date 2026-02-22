@@ -21,7 +21,8 @@ const services = [
     description: "Purchase and activate your digital SIM card instantly. No physical card needed.",
     features: ["Instant activation", "QR code delivery", "Compatible devices"],
     color: "from-[#00875A] to-[#006644]",
-    popular: true,
+    popular: false,
+    disabled: true,
   },
   {
     id: "kyc",
@@ -30,6 +31,8 @@ const services = [
     description: "Complete your Know Your Customer verification for regulatory compliance.",
     features: ["ID verification", "Biometric check", "Secure process"],
     color: "from-[#006644] to-[#004D33]",
+    popular: true,
+    disabled: false,
   },
   {
     id: "physical-sim",
@@ -38,6 +41,8 @@ const services = [
     description: "Register a new physical SIM card with full KYC verification.",
     features: ["Full registration", "Plan selection", "Delivery options"],
     color: "from-[#00B8A9] to-[#00875A]",
+    popular: false,
+    disabled: true,
   },
   {
     id: "sim-swap",
@@ -46,6 +51,8 @@ const services = [
     description: "Transfer your existing number to a new SIM card securely.",
     features: ["Keep your number", "Quick process", "Identity verified"],
     color: "from-[#B4D335] to-[#8BC34A]",
+    popular: false,
+    disabled: true,
   },
   {
     id: "smega",
@@ -54,6 +61,8 @@ const services = [
     description: "Register for BTC's mobile money wallet linked to your number.",
     features: ["Send & receive money", "Bill & airtime payments", "Merchant payments"],
     color: "from-[#00875A] to-[#00B8A9]",
+    popular: false,
+    disabled: true,
   },
 ];
 
@@ -95,6 +104,11 @@ const ServicesSection = ({ onSelectService }: ServicesSectionProps) => {
                     Most Popular
                   </div>
                 )}
+                {service.disabled && (
+                  <div className="absolute -top-3 left-6 px-3 py-1 rounded-full bg-muted text-xs font-semibold text-muted-foreground border border-border">
+                    Temporarily unavailable
+                  </div>
+                )}
 
                 {/* Icon */}
                 <div className={`w-14 h-14 rounded-xl bg-gradient-to-br ${service.color} flex items-center justify-center mb-5`}>
@@ -121,11 +135,14 @@ const ServicesSection = ({ onSelectService }: ServicesSectionProps) => {
 
                 {/* CTA */}
                 <Button
-                  variant={service.popular ? "hero" : "outline"}
+                  variant={service.disabled ? "outline" : service.popular ? "hero" : "outline"}
                   className="w-full"
-                  onClick={() => onSelectService(service.id)}
+                  disabled={service.disabled}
+                  onClick={() => {
+                    if (!service.disabled) onSelectService(service.id);
+                  }}
                 >
-                  {service.id === "esim" ? "Buy Now" : "Get Started"}
+                  {service.disabled ? "Temporary disabled" : service.id === "esim" ? "Buy Now" : "Get Started"}
                   <ArrowRight className="w-4 h-4 ml-1" />
                 </Button>
               </div>
