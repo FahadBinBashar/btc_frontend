@@ -29,16 +29,26 @@ const nextOfKinRelations = [
   "Friend",
 ];
 
-// Demo mode: Relaxed validation - all fields optional
 const registrationSchema = z.object({
-  plotNumber: z.string().trim().max(50, "Plot number too long").optional().default(""),
-  ward: z.string().trim().max(50, "Ward name too long").optional().default(""),
-  village: z.string().trim().max(100, "Village name too long").optional().default(""),
-  city: z.string().trim().max(100, "City name too long").optional().default(""),
+  plotNumber: z.string().trim().min(1, "Plot number is required").max(50, "Plot number too long"),
+  ward: z.string().trim().min(1, "Ward is required").max(50, "Ward name too long"),
+  village: z.string().trim().min(1, "Village is required").max(100, "Village name too long"),
+  city: z.string().trim().min(1, "City is required").max(100, "City name too long"),
   postalAddress: z.string().trim().max(200, "Postal address too long").optional().default(""),
-  nextOfKinName: z.string().trim().max(100, "Name too long").optional().default(""),
-  nextOfKinRelation: z.string().optional().default(""),
-  nextOfKinPhone: z.string().trim().max(20, "Phone number too long").optional().default(""),
+  nextOfKinName: z
+    .string()
+    .trim()
+    .min(1, "Next of kin name is required")
+    .max(100, "Name too long"),
+  nextOfKinRelation: z
+    .string()
+    .trim()
+    .min(1, "Relationship is required"),
+  nextOfKinPhone: z
+    .string()
+    .trim()
+    .min(1, "Phone number is required")
+    .max(20, "Phone number too long"),
   email: z.string().trim().max(255, "Email too long").optional().default(""),
 });
 
@@ -83,9 +93,6 @@ const KYCComplianceRegistration = ({ onSubmit, onBack }: KYCComplianceRegistrati
       }
     }
   };
-
-  // Demo mode: Always valid - no required fields
-  const isValid = true;
 
   return (
     <motion.div
@@ -286,7 +293,6 @@ const KYCComplianceRegistration = ({ onSubmit, onBack }: KYCComplianceRegistrati
           <Button
             variant="hero"
             onClick={handleSubmit}
-            disabled={!isValid}
             className="flex-1"
           >
             Continue to Verification
